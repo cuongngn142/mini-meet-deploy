@@ -3,7 +3,7 @@
  * Kết nối MongoDB với Mongoose
  * Sử dụng connection string từ environment variable
  */
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 /**
  * Kết nối đến MongoDB
@@ -11,10 +11,15 @@ const mongoose = require('mongoose');
  */
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/minimeet', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    const conn = await mongoose.connect(
+      process.env.MONGODB_URI || "mongodb://localhost:27017/minimeet",
+      {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        tls: true,
+        tlsAllowInvalidCertificates: true,
+      }
+    );
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`Error: ${error.message}`);
@@ -23,4 +28,3 @@ const connectDB = async () => {
 };
 
 module.exports = connectDB;
-
