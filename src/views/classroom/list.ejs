@@ -1,0 +1,42 @@
+<%- include('../layout', { 
+    title: 'Classes',
+    body: `
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-book"></i> My Classes</h1>
+        <div>
+            <a href="/classroom/join" class="btn btn-secondary me-2">
+                <i class="bi bi-box-arrow-in-right"></i> Join Class
+            </a>
+            <a href="/classroom/create" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Create Class
+            </a>
+        </div>
+    </div>
+    <div class="row">
+        ${classes.length === 0 ? `
+        <div class="col-12">
+            <div class="alert alert-info">No classes found. Create or join a class!</div>
+        </div>
+        ` : classes.map(classRoom => `
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">${classRoom.name}</h5>
+                    <p class="card-text text-muted">${classRoom.description || 'No description'}</p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            Code: <strong>${classRoom.code}</strong><br>
+                            Teacher: ${classRoom.teacher.name}<br>
+                            Students: ${classRoom.students ? classRoom.students.length : 0}
+                        </small>
+                    </p>
+                    <a href="/classroom/${classRoom._id}" class="btn btn-primary btn-sm">View Class</a>
+                </div>
+            </div>
+        </div>
+        `).join('')}
+    </div>
+</div>
+` }) %>
+

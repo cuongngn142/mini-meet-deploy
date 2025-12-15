@@ -1,0 +1,38 @@
+<%- include('../layout', { 
+    title: 'Homework',
+    body: `
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-file-text"></i> Homework</h1>
+        ${user.role === 'teacher' ? `
+        <a href="/homework/create" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Create Homework
+        </a>
+        ` : ''}
+    </div>
+    <div class="row">
+        ${homeworks.length === 0 ? `
+        <div class="col-12">
+            <div class="alert alert-info">No homework assignments found.</div>
+        </div>
+        ` : homeworks.map(homework => `
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">${homework.title}</h5>
+                    <p class="card-text text-muted">${homework.description || 'No description'}</p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            Class: ${homework.class.name}<br>
+                            Due: ${new Date(homework.dueDate).toLocaleDateString()}
+                        </small>
+                    </p>
+                    <a href="/homework/${homework._id}" class="btn btn-primary btn-sm">View</a>
+                </div>
+            </div>
+        </div>
+        `).join('')}
+    </div>
+</div>
+` }) %>
+

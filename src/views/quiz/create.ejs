@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Quiz - miniMeet</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css"
+    />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+
+  <body>
+    <% if (typeof user !=='undefined' && user) { %> <%-
+    include('../partials/navbar') %> <% } %>
+
+    <main class="container py-4">
+      <div class="row justify-content-center">
+        <div class="col-md-10">
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="bi bi-plus-circle"></i> Create Quiz</h3>
+            </div>
+            <div class="card-body">
+              <form method="POST" action="/quiz/create" id="quiz-form">
+                <div class="mb-3">
+                  <label class="form-label">Title</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    name="title"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Description</label>
+                  <textarea
+                    class="form-control"
+                    name="description"
+                    rows="3"
+                  ></textarea>
+                </div>
+                <div class="row mb-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Class</label>
+                    <select class="form-select" name="classId" required>
+                      <option value="">Select a class</option>
+                      <% classes.forEach(cls=> { %>
+                      <option value="<%= cls._id %>"><%= cls.name %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Time Limit (minutes)</label>
+                    <input
+                      type="number"
+                      class="form-control"
+                      name="timeLimit"
+                    />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">End Date</label>
+                    <input
+                      type="datetime-local"
+                      class="form-control"
+                      name="endDate"
+                    />
+                  </div>
+                </div>
+                <hr />
+                <h5>Questions</h5>
+                <div id="questions-container"></div>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  onclick="addQuestion()"
+                >
+                  Add Question
+                </button>
+                <hr />
+                <button type="submit" class="btn btn-primary">
+                  Create Quiz
+                </button>
+                <a href="/quiz" class="btn btn-secondary">Cancel</a>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <% if (typeof user !=='undefined' && user) { %> <%-
+    include('../partials/footer') %> <% } %>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- <script>
+      let questionCount = -1;
+      function addQuestion() {
+        questionCount++;
+        const container = document.getElementById("questions-container");
+        const questionDiv = document.createElement("div");
+        questionDiv.className = "card mb-3";
+        questionDiv.innerHTML = `
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">Question</label>
+                <input type="text" class="form-control" name="questions[${questionCount}][question]" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Type</label>
+                <select class="form-select" name="questions[${questionCount}][type]" onchange="updateQuestionType(this)">
+                    <option value="multiple-choice">Multiple Choice</option>
+                    <option value="true-false">True/False</option>
+                </select>
+            </div>
+            <div class="mb-3" id="options-${questionCount}">
+                <label class="form-label">Options (one per line)</label>
+                <textarea class="form-control" name="questions[${questionCount}][options]" rows="4" placeholder="Option 1\nOption 2\nOption 3"></textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Correct Answer</label>
+                <input type="text" class="form-control" name="questions[${questionCount}][correctAnswer]" required>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.parentElement.remove()">Remove</button>
+        </div>
+    `;
+        container.appendChild(questionDiv);
+      }
+
+      function updateQuestionType(select) {
+        const optionsDiv =
+          select.parentElement.parentElement.querySelector('[id^="options-"]');
+        if (select.value === "true-false") {
+          optionsDiv.innerHTML =
+            '<label class="form-label">Options</label><textarea class="form-control" name="' +
+            select.name.replace("[type]", "[options]") +
+            '" rows="2" readonly>True\nFalse</textarea>';
+        }
+      }
+
+      document
+        .getElementById("quiz-form")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+          const formData = new FormData(this);
+          const questions = [];
+          let i = 0;
+          while (formData.has(`questions[${i}][question]`)) {
+            const question = {
+              question: formData.get(`questions[${i}][question]`),
+              type: formData.get(`questions[${i}][type]`),
+              options: formData
+                .get(`questions[${i}][options]`)
+                .split("\n")
+                .filter((o) => o.trim()),
+              correctAnswer: formData.get(`questions[${i}][correctAnswer]`),
+            };
+            questions.push(question);
+            i++;
+          }
+
+          const data = {
+            title: formData.get("title"),
+            description: formData.get("description"),
+            classId: formData.get("classId"),
+            timeLimit: formData.get("timeLimit"),
+            endDate: formData.get("endDate"),
+            questions: questions,
+          };
+
+          fetch(this.action, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          }).then((res) => {
+            if (res.ok) {
+              window.location.href = "/quiz";
+            } else {
+              alert("Error creating quiz");
+            }
+          });
+        });
+    </script> -->
+    <script>
+      let questionCount = 0;
+
+      function addQuestion() {
+        const container = document.getElementById("questions-container");
+
+        const div = document.createElement("div");
+        div.className = "card mb-3 p-3";
+        div.setAttribute("data-index", questionCount);
+
+        div.innerHTML = `
+      <div class="mb-3">
+        <label class="form-label">Question</label>
+        <input type="text" class="form-control question-text">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Type</label>
+        <select class="form-select question-type" onchange="updateQuestionType(this)">
+          <option value="multiple-choice">Multiple Choice</option>
+          <option value="true-false">True/False</option>
+        </select>
+      </div>
+
+      <div class="mb-3 question-options">
+        <label class="form-label">Options (one per line)</label>
+        <textarea class="form-control options-input" rows="4" placeholder="Option 1\nOption 2"></textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Correct Answer</label>
+        <input type="text" class="form-control correct-answer">
+      </div>
+
+      <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">Remove</button>
+    `;
+
+        container.appendChild(div);
+        questionCount++;
+      }
+
+      // True/False update
+      function updateQuestionType(select) {
+        const card = select.closest(".card");
+        const optionsBox = card.querySelector(".question-options");
+
+        if (select.value === "true-false") {
+          optionsBox.innerHTML = `
+        <label class="form-label">Options</label>
+        <textarea class="form-control options-input" readonly>True\nFalse</textarea>
+      `;
+        } else {
+          optionsBox.innerHTML = `
+        <label class="form-label">Options (one per line)</label>
+        <textarea class="form-control options-input" rows="4"></textarea>
+      `;
+        }
+      }
+
+      // Submit
+      document
+        .getElementById("quiz-form")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const questions = [
+            ...document.querySelectorAll("#questions-container .card"),
+          ].map((card) => {
+            return {
+              question: card.querySelector(".question-text").value.trim(),
+              type: card.querySelector(".question-type").value,
+              options: card
+                .querySelector(".options-input")
+                .value.split("\n")
+                .map((o) => o.trim())
+                .filter((o) => o.length > 0),
+              correctAnswer: card.querySelector(".correct-answer").value.trim(),
+            };
+          });
+
+          const data = {
+            title: this.title.value,
+            description: this.description.value,
+            classId: this.classId.value,
+            timeLimit: this.timeLimit.value,
+            endDate: this.endDate.value,
+            questions,
+          };
+
+          fetch(this.action, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }).then((res) => {
+            if (res.ok) {
+              window.location.href = "/quiz";
+            } else {
+              alert("Error creating quiz");
+            }
+          });
+        });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,116 @@
+<%- include('../layout', { title: homework.title, body: ` <div class="container">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h2>${homework.title}</h2>
+                    <p class="text-muted">Class: ${homework.class.name} | Due: ${new
+                        Date(homework.dueDate).toLocaleString()}</p>
+                    <hr>
+                    <p>${homework.description || 'No description'}</p>
+                </div>
+            </div>
+
+            ${!isTeacher ? `
+            <div class="card">
+                <div class="card-header">
+                    <h5>Submit Homework</h5>
+                </div>
+                <div class="card-body">
+                    ${submission ? `
+                    <div class="alert alert-success">You have already submitted this homework.</div>
+
+                    ${submission.files && submission.files.length > 0 ? `
+                    <div class="mb-3">
+                        <strong>Your Submitted Files:</strong>
+                        <ul class="list-unstyled mt-2">
+                            ${submission.files.map(file => `
+                            <li>
+                                <i class="bi bi-file-earmark"></i>
+                                <a href="/${file.path}" target="_blank">${file.filename}</a>
+                            </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                    ` : ''}
+
+                    ${submission.grade !== undefined ? `
+                    <div class="alert alert-info">
+                        <strong>Grade:</strong> ${submission.grade}<br>
+                        ${submission.feedback ? `<strong>Feedback:</strong> ${submission.feedback}` : ''}
+                    </div>
+                    ` : ''}
+                    ` : `
+                    <form method="POST" action="/homework/${homework._id}/submit" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">Upload Files</label>
+                            <input type="file" class="form-control" name="files" multiple>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Submit</button>
+                    </form>
+                    `}
+                </div>
+            </div>
+            ` : `
+            <div class="card">
+                <div class="card-header">
+                    <h5>Submissions (${homework.submissions.length})</h5>
+                </div>
+                <div class="card-body">
+                    ${homework.submissions.length === 0 ? '<p class="text-muted">No submissions yet.</p>' :
+                    homework.submissions.map(sub => `
+                    <div class="border p-3 mb-3">
+                        <h6>${sub.student.name}</h6>
+                        <p class="text-muted">Submitted: ${new Date(sub.submittedAt).toLocaleString()}</p>
+
+                        ${sub.files && sub.files.length > 0 ? `
+                        <div class="mb-3">
+                            <strong>Submitted Files:</strong>
+                            <ul class="list-unstyled mt-2">
+                                ${sub.files.map(file => `
+                                <li>
+                                    <i class="bi bi-file-earmark"></i>
+                                    <a href="/${file.path}" target="_blank">${file.filename}</a>
+                                </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                        ` : '<p class="text-muted small">No files submitted</p>'}
+
+                        <form class="mt-3" onsubmit="gradeSubmission(event, '${sub.student._id}')">
+                            <div class="mb-2">
+                                <label class="form-label">Grade</label>
+                                <input type="number" class="form-control" name="grade" value="${sub.grade || ''}"
+                                    step="0.1">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Feedback</label>
+                                <textarea class="form-control" name="feedback">${sub.feedback || ''}</textarea>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-primary">Save Grade</button>
+                        </form>
+                    </div>
+                    `).join('')}
+                </div>
+            </div>
+            `}
+        </div>
+    </div>
+    </div>
+
+    <script>
+        function gradeSubmission(e, studentId) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            fetch('/homework/${homework._id}/grade', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    studentId,
+                    grade: formData.get('grade'),
+                    feedback: formData.get('feedback')
+                })
+            }).then(() => location.reload());
+        }
+    </script>
+    ` }) %>

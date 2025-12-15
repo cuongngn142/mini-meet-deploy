@@ -1,0 +1,27 @@
+<%- include('../layout', { 
+    title: material.title,
+    body: `
+<div class="container">
+    <div class="row">
+        <div class="col-md-10 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <h2>${material.title}</h2>
+                    <p class="text-muted">
+                        Class: ${material.class ? material.class.name : 'N/A'} | 
+                        Uploaded by: ${material.uploadedBy.name} | 
+                        ${new Date(material.createdAt).toLocaleString()}
+                    </p>
+                    <hr>
+                    ${material.description ? `<p>${material.description}</p>` : ''}
+                    <p><strong>File Type:</strong> ${material.fileType}</p>
+                    <a href="/material/${material._id}/download" class="btn btn-primary">
+                        <i class="bi bi-download"></i> Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+` }) %>
+

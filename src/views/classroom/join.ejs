@@ -1,0 +1,26 @@
+<%- include('../layout', { 
+    title: 'Join Class',
+    body: `
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="bi bi-box-arrow-in-right"></i> Join Class</h3>
+                </div>
+                <div class="card-body">
+                    ${error ? `<div class="alert alert-danger">${error}</div>` : ''}
+                    <form method="POST" action="/classroom/join">
+                        <div class="mb-3">
+                            <label class="form-label">Class Code</label>
+                            <input type="text" class="form-control" name="code" placeholder="Enter class code" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Join</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+` }) %>
+

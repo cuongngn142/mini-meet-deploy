@@ -1,0 +1,53 @@
+<%- include('../layout', { 
+    title: post.title,
+    body: `
+<div class="container">
+    <div class="row">
+        <div class="col-md-10 mx-auto">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h2>${post.title}</h2>
+                    <p class="text-muted">By ${post.author.name} | ${new Date(post.createdAt).toLocaleString()}</p>
+                    <hr>
+                    <p>${post.content}</p>
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-primary" onclick="likePost()">
+                            <i class="bi bi-heart"></i> Like (${post.likes ? post.likes.length : 0})
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5>Comments (${post.comments ? post.comments.length : 0})</h5>
+                </div>
+                <div class="card-body">
+                    ${post.comments && post.comments.length > 0 ? post.comments.map(comment => `
+                    <div class="border-bottom pb-3 mb-3">
+                        <strong>${comment.author.name}</strong>
+                        <small class="text-muted">${new Date(comment.createdAt).toLocaleString()}</small>
+                        <p class="mt-2">${comment.content}</p>
+                    </div>
+                    `).join('') : '<p class="text-muted">No comments yet.</p>'}
+                    <form method="POST" action="/forum/${post._id}/comment">
+                        <div class="mb-3">
+                            <textarea class="form-control" name="content" rows="3" placeholder="Write a comment..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Post Comment</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function likePost() {
+    fetch('/forum/${post._id}/like', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => location.reload());
+}
+</script>
+` }) %>
+

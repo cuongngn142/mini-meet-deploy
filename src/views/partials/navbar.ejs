@@ -1,0 +1,73 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/meeting">
+            <i class="bi bi-camera-video"></i> miniMeet
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="/meeting">
+                        <i class="bi bi-camera-video"></i> Meetings
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/classroom">
+                        <i class="bi bi-book"></i> Classes
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/homework">
+                        <i class="bi bi-file-text"></i> Homework
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/forum">
+                        <i class="bi bi-chat-dots"></i> Forum
+                    </a>
+                </li>
+            </ul>
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link position-relative" href="/notification">
+                        <i class="bi bi-bell"></i>
+                        <% if (user.unreadNotifications> 0) { %>
+                            <span
+                                class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                <%= user.unreadNotifications %>
+                            </span>
+                            <% } %>
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button"
+                        data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle"></i>
+                        <%= user.name %>
+                            <span class="badge bg-secondary">
+                                <%= user.role %>
+                            </span>
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="/notification">
+                                <i class="bi bi-bell"></i> Notifications
+                                <% if (user.unreadNotifications> 0) { %>
+                                    <span class="badge bg-danger ms-2">
+                                        <%= user.unreadNotifications %>
+                                    </span>
+                                    <% } %>
+                            </a></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item" href="/auth/logout">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>

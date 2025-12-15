@@ -1,0 +1,115 @@
+<%- include('../layout', { title: quiz.title, body: `
+<div class="container">
+  <div class="row">
+    <div class="col-md-10 mx-auto">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h2>${quiz.title}</h2>
+          <p class="text-muted">Class: ${quiz.class.name}</p>
+          ${quiz.description ? `
+          <p>${quiz.description}</p>
+          ` : ''}
+        </div>
+      </div>
+
+      ${isTeacher ? `
+      <div class="card">
+        <div class="card-header">
+          <h5>Attempts (${quiz.attempts.length})</h5>
+        </div>
+        <div class="card-body">
+          ${quiz.attempts.map(attempt => `
+          <div class="border p-3 mb-3">
+            <h6>${attempt.student.name}</h6>
+            <p>Score: ${attempt.score || 'Not graded'}</p>
+            <p class="text-muted">
+              Submitted: ${new Date(attempt.submittedAt).toLocaleString()}
+            </p>
+          </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ` ${attempt ? `
+      <div class="alert alert-info">
+        You have already taken this quiz. Score: ${attempt.score}
+      </div>
+      ` : `
+      <div class="card">
+        <div class="card-body">
+          <form id="quiz-form" onsubmit="submitQuiz(event)">
+            ${quiz.questions.map((q, idx) => `
+            <div class="mb-4">
+              <h5>Question ${idx + 1}: ${q.question}</h5>
+              ${q.type === 'multiple-choice' ? q.options.map((opt, optIdx) => `
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="radio"
+                  name="q${idx}"
+                  value="${opt}"
+                  id="q${idx}-opt${optIdx}"
+                />
+                <label class="form-check-label" for="q${idx}-opt${optIdx}"
+                  >${opt}</label
+                >
+              </div>
+              `).join('') : `
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="radio"
+                  name="q${idx}"
+                  value="true"
+                  id="q${idx}-true"
+                />
+                <label class="form-check-label" for="q${idx}-true">True</label>
+              </div>
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="radio"
+                  name="q${idx}"
+                  value="false"
+                  id="q${idx}-false"
+                />
+                <label class="form-check-label" for="q${idx}-false"
+                  >False</label
+                >
+              </div>
+              `}
+              <input type="hidden" name="questionId${idx}" value="${q._id}" />
+            </div>
+            `).join('')}
+            <button type="submit" class="btn btn-primary">Submit Quiz</button>
+          </form>
+        </div>
+      </div>
+      `} `}
+    </div>
+  </div>
+</div>
+<script>
+      function submitQuiz(e) {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          const answers = [];
+  ${
+              quiz.questions.map((q, idx) => `
+  const answer${idx} = formData.get('q${idx}');
+  if (answer${idx}) {
+      answers.push({ questionId: '${q._id}', answer: answer${idx} });
+  }
+  `).join('')
+          }
+
+          fetch('/quiz/${quiz._id}/submit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ answers, suspiciousActivities: [] })
+          }).then(res => res.json()).then(data => {
+              alert('Quiz submitted! Score: ' + data.score + '/' + data.totalPoints);
+              location.reload();
+          });
+      }
+</script>
+` }) %>

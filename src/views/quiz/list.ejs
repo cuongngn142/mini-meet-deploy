@@ -1,0 +1,38 @@
+<%- include('../layout', { 
+    title: 'Quizzes',
+    body: `
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-question-circle"></i> Quizzes</h1>
+        ${user.role === 'teacher' ? `
+        <a href="/quiz/create" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Create Quiz
+        </a>
+        ` : ''}
+    </div>
+    <div class="row">
+        ${quizzes.length === 0 ? `
+        <div class="col-12">
+            <div class="alert alert-info">No quizzes found.</div>
+        </div>
+        ` : quizzes.map(quiz => `
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">${quiz.title}</h5>
+                    <p class="card-text text-muted">${quiz.description || 'No description'}</p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            Class: ${quiz.class.name}<br>
+                            Questions: ${quiz.questions ? quiz.questions.length : 0}
+                        </small>
+                    </p>
+                    <a href="/quiz/${quiz._id}" class="btn btn-primary btn-sm">View</a>
+                </div>
+            </div>
+        </div>
+        `).join('')}
+    </div>
+</div>
+` }) %>
+
