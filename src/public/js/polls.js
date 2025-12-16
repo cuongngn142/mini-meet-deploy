@@ -526,5 +526,3 @@ if (typeof socket !== 'undefined') {
         updateActivePollCard({ id });
     });
 }
-
-

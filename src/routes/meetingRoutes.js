@@ -17,4 +17,3 @@ router.post('/:id/deny', authenticate, meetingController.denyParticipant);
 router.post('/:id/end', authenticate, meetingController.endMeeting);
 
 module.exports = router;
-

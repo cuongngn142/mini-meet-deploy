@@ -15,4 +15,3 @@ router.post('/create', authenticate, quizController.createQuiz);
 router.post('/:id/submit', authenticate, quizController.submitQuiz);
 
 module.exports = router;
-

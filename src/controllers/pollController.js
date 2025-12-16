@@ -181,7 +181,6 @@ const endPoll = async (req, res) => {
     }
 };
 
-
 module.exports = {
     createPoll,
     votePoll,

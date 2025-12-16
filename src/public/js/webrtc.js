@@ -169,4 +169,3 @@ window.webrtcUtils = {
     stopLiveCaptions,
     translateText
 };
-

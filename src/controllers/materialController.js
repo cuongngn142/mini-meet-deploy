@@ -3,32 +3,31 @@
  * Quản lý tài liệu học tập
  * Xử lý upload, xem và download file tài liệu
  */
-const Material = require("../models/Material");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const Class = require("../models/Class");
+const Material = require('../models/Material');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 // Cấu hình Multer cho upload tài liệu (max 100MB)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = "uploads/materials";
+    const dir = 'uploads/materials';
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+    cb(null, Date.now() + '-' + file.originalname);
+  }
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
 
-const uploadMaterial = upload.single("file");
+const uploadMaterial = upload.single('file');
 
 /**
  * Tạo tài liệu mới
@@ -39,9 +38,9 @@ const createMaterial = async (req, res) => {
     const { title, description, classId } = req.body;
 
     if (!req.file) {
-      return res.render("error", {
-        error: "No file uploaded",
-        user: req.user,
+      return res.render('error', {
+        error: 'No file uploaded',
+        user: req.user
       });
     }
 
@@ -56,18 +55,20 @@ const createMaterial = async (req, res) => {
       filePath: req.file.path,
       fileName: req.file.originalname,
       fileSize: req.file.size,
-      mimeType: req.file.mimetype,
+      mimeType: req.file.mimetype
     });
 
+    // Add to class
+    const Class = require('../models/Class');
     await Class.findByIdAndUpdate(classId, {
-      $push: { materials: material._id },
+      $push: { materials: material._id }
     });
 
     res.redirect(`/material/${material._id}`);
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
@@ -75,24 +76,24 @@ const createMaterial = async (req, res) => {
 const getMaterial = async (req, res) => {
   try {
     const material = await Material.findById(req.params.id)
-      .populate("class", "name code")
-      .populate("uploadedBy", "name email");
+      .populate('class', 'name code')
+      .populate('uploadedBy', 'name email');
 
     if (!material) {
-      return res.render("error", {
-        error: "Material not found",
-        user: req.user,
+      return res.render('error', {
+        error: 'Material not found',
+        user: req.user
       });
     }
 
-    res.render("material/view", {
+    res.render('material/view', {
       material,
-      user: req.user,
+      user: req.user
     });
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
@@ -103,19 +104,19 @@ const listMaterials = async (req, res) => {
     const query = classId ? { class: classId } : {};
 
     const materials = await Material.find(query)
-      .populate("class", "name")
-      .populate("uploadedBy", "name")
+      .populate('class', 'name')
+      .populate('uploadedBy', 'name')
       .sort({ createdAt: -1 });
 
-    res.render("material/list", {
+    res.render('material/list', {
       materials,
       user: req.user,
-      classId,
+      classId
     });
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
@@ -124,23 +125,24 @@ const downloadMaterial = async (req, res) => {
   try {
     const material = await Material.findById(req.params.id);
     if (!material) {
-      return res.status(404).send("Material not found");
+      return res.status(404).send('Material not found');
     }
 
     res.download(material.filePath, material.fileName);
   } catch (error) {
-    res.status(500).send("Error downloading file");
+    res.status(500).send('Error downloading file');
   }
 };
 
+/**
+ * Helper: xác định loại file dựa trên mimetype
+ */
 function getFileType(mimetype) {
-  if (mimetype === "application/pdf") return "pdf";
-  if (mimetype.includes("presentation") || mimetype.includes("powerpoint"))
-    return "ppt";
-  if (mimetype.startsWith("video/")) return "video";
-  if (mimetype.includes("document") || mimetype.includes("word"))
-    return "document";
-  return "other";
+  if (mimetype === 'application/pdf') return 'pdf';
+  if (mimetype.includes('presentation') || mimetype.includes('powerpoint')) return 'ppt';
+  if (mimetype.startsWith('video/')) return 'video';
+  if (mimetype.includes('document') || mimetype.includes('word')) return 'document';
+  return 'other';
 }
 
 module.exports = {
@@ -148,5 +150,5 @@ module.exports = {
   createMaterial,
   getMaterial,
   listMaterials,
-  downloadMaterial,
-};
+  downloadMaterial
+}

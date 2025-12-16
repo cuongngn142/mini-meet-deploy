@@ -56,4 +56,3 @@ const homeworkSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Homework', homeworkSchema);
-

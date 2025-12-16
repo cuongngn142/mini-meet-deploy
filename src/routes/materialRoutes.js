@@ -15,4 +15,3 @@ router.get('/:id/download', authenticate, materialController.downloadMaterial);
 router.post('/create', authenticate, materialController.uploadMaterial, materialController.createMaterial);
 
 module.exports = router;
-

@@ -1,4 +1,9 @@
-const Quiz = require("../models/Quiz");
+/**
+ * Quiz Controller
+ * Quản lý bài kiểm tra trắc nghiệm
+ * Xử lý tạo quiz, làm bài, chấm điểm tự động
+ */
+const Quiz = require('../models/Quiz');
 
 /**
  * Tạo quiz mới
@@ -6,18 +11,9 @@ const Quiz = require("../models/Quiz");
  */
 const createQuiz = async (req, res) => {
   try {
-    const {
-      title,
-      description,
-      classId,
-      timeLimit,
-      startDate,
-      endDate,
-      questions,
-    } = req.body;
+    const { title, description, classId, timeLimit, startDate, endDate, questions } = req.body;
 
-    const parsedQuestions =
-      typeof questions === "string" ? JSON.parse(questions) : questions;
+    const parsedQuestions = typeof questions === 'string' ? JSON.parse(questions) : questions;
 
     const quiz = await Quiz.create({
       title,
@@ -27,20 +23,20 @@ const createQuiz = async (req, res) => {
       timeLimit: parseInt(timeLimit),
       startDate: startDate ? new Date(startDate) : null,
       endDate: endDate ? new Date(endDate) : null,
-      questions: parsedQuestions,
+      questions: parsedQuestions
     });
 
     // Add quiz to class
-    const Class = require("../models/Class");
+    const Class = require('../models/Class');
     await Class.findByIdAndUpdate(classId, {
-      $push: { quizzes: quiz._id },
+      $push: { quizzes: quiz._id }
     });
 
     res.redirect(`/quiz/${quiz._id}`);
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
@@ -48,32 +44,32 @@ const createQuiz = async (req, res) => {
 const getQuiz = async (req, res) => {
   try {
     const quiz = await Quiz.findById(req.params.id)
-      .populate("class", "name code")
-      .populate("teacher", "name email")
-      .populate("attempts.student", "name email");
+      .populate('class', 'name code')
+      .populate('teacher', 'name email')
+      .populate('attempts.student', 'name email');
 
     if (!quiz) {
-      return res.render("error", {
-        error: "Quiz not found",
-        user: req.user,
+      return res.render('error', {
+        error: 'Quiz not found',
+        user: req.user
       });
     }
 
     const isTeacher = quiz.teacher._id.toString() === req.user._id.toString();
     const attempt = quiz.attempts.find(
-      (a) => a.student._id.toString() === req.user._id.toString()
+      a => a.student._id.toString() === req.user._id.toString()
     );
 
-    res.render("quiz/view", {
+    res.render('quiz/view', {
       quiz,
       user: req.user,
       isTeacher,
-      attempt,
+      attempt
     });
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
@@ -81,112 +77,141 @@ const getQuiz = async (req, res) => {
 const listQuizzes = async (req, res) => {
   try {
     let quizzes;
-    if (req.user.role === "teacher") {
+    if (req.user.role === 'teacher') {
       quizzes = await Quiz.find({ teacher: req.user._id })
-        .populate("class", "name")
+        .populate('class', 'name')
         .sort({ createdAt: -1 });
     } else {
-      quizzes = await Quiz.find({ "class.students": req.user._id })
-        .populate("class", "name")
-        .populate("teacher", "name")
+      quizzes = await Quiz.find({ 'class.students': req.user._id })
+        .populate('class', 'name')
+        .populate('teacher', 'name')
         .sort({ createdAt: -1 });
     }
 
-    res.render("quiz/list", {
+    res.render('quiz/list', {
       quizzes,
-      user: req.user,
+      user: req.user
     });
   } catch (error) {
-    res.render("error", {
+    res.render('error', {
       error: error.message,
-      user: req.user,
+      user: req.user
     });
   }
 };
 
+/**
+ * Nộp bài quiz
+ * Tự động chấm điểm bằng cách so sánh đáp án với correctAnswer
+ */
 const submitQuiz = async (req, res) => {
   try {
     const quiz = await Quiz.findById(req.params.id);
-    if (!quiz) {
-      return res.status(404).json({ error: "Quiz not found" });
-    }
-
-    // Kiểm tra học sinh đã nộp chưa
     const existingAttempt = quiz.attempts.find(
-      (a) => a.student.toString() === req.user._id.toString()
+      a => a.student.toString() === req.user._id.toString()
     );
+
     if (existingAttempt) {
-      return res
-        .status(400)
-        .json({ error: "You have already submitted this quiz" });
+      return res.status(400).json({ error: 'You have already submitted this quiz' });
     }
 
     const { answers, suspiciousActivities } = req.body;
 
+    console.log('=== QUIZ SUBMISSION DEBUG ===');
+    console.log('Quiz ID:', req.params.id);
+    console.log('Total questions:', quiz.questions.length);
+    console.log('Answers received:', JSON.stringify(answers, null, 2));
+
     let score = 0;
     let totalPoints = 0;
+    const debugInfo = [];
 
     answers.forEach((answer) => {
-      const question = quiz.questions.find(
-        (q) => q._id.toString() === answer.questionId
-      );
-
-      if (!question) return;
+      // Tìm question theo questionId thay vì dùng index
+      const question = quiz.questions.find(q => q._id.toString() === answer.questionId);
+      if (!question) {
+        console.log('❌ Question not found for ID:', answer.questionId);
+        debugInfo.push({ error: 'Question not found', questionId: answer.questionId });
+        return;
+      }
 
       totalPoints += question.points;
+
+      console.log('\n--- Question:', question.question);
+      console.log('Type:', question.type);
+      console.log('Student answer:', answer.answer, '(type:', typeof answer.answer + ')');
+      console.log('Correct answer:', question.correctAnswer, '(type:', typeof question.correctAnswer + ')');
+
+      if (question.type === 'multiple-choice' && question.options) {
+        console.log('Options:', question.options);
+      }
+
       let isCorrect = false;
 
-      switch (question.type) {
-        case "multiple-choice": {
-          const studentIndex = parseInt(answer.answer);
-          const correctAsNumber = parseInt(question.correctAnswer);
+      if (question.type === 'multiple-choice') {
+        // Với multiple choice, answer là index của option được chọn
+        const studentAnswerIndex = parseInt(answer.answer);
 
-          if (!isNaN(correctAsNumber)) {
-            // correctAnswer là index
-            isCorrect = studentIndex === correctAsNumber;
-          } else {
-            // correctAnswer là text → tìm index tương ứng
-            const correctIndex = question.options.indexOf(
-              question.correctAnswer
-            );
-            isCorrect = studentIndex === correctIndex;
-          }
-          break;
-        }
+        // Kiểm tra nếu correctAnswer là số (index) hay text (option value)
+        const correctAnswerNum = parseInt(question.correctAnswer);
 
-        case "true-false": {
-          const studentAns = String(answer.answer).toLowerCase();
-          const correctAns = String(question.correctAnswer).toLowerCase();
-          isCorrect = studentAns === correctAns;
-          break;
+        if (!isNaN(correctAnswerNum)) {
+          // correctAnswer là index
+          console.log('Multiple choice (index) - Student:', studentAnswerIndex, 'Correct:', correctAnswerNum);
+          isCorrect = studentAnswerIndex === correctAnswerNum;
+        } else {
+          // correctAnswer là text - tìm index của text đó trong options
+          const correctIndex = question.options.indexOf(question.correctAnswer);
+          console.log('Multiple choice (text) - Student index:', studentAnswerIndex, 'Correct text:', question.correctAnswer, 'Correct index:', correctIndex);
+          isCorrect = studentAnswerIndex === correctIndex;
         }
+      } else if (question.type === 'true-false') {
+        // Với true/false, so sánh trực tiếp
+        const studentAnswer = String(answer.answer).toLowerCase();
+        const correctAnswer = String(question.correctAnswer).toLowerCase();
 
-        default: {
-          // Short answer
-          const studentAns = String(answer.answer).trim().toLowerCase();
-          const correctAns = String(question.correctAnswer)
-            .trim()
-            .toLowerCase();
-          isCorrect = studentAns === correctAns;
-        }
+        console.log('True/False - Student:', studentAnswer, 'Correct:', correctAnswer);
+
+        isCorrect = studentAnswer === correctAnswer;
+      } else {
+        // Short answer - so sánh string (case insensitive)
+        const studentAnswer = String(answer.answer).trim().toLowerCase();
+        const correctAnswer = String(question.correctAnswer).trim().toLowerCase();
+
+        console.log('Short answer - Student:', studentAnswer, 'Correct:', correctAnswer);
+
+        isCorrect = studentAnswer === correctAnswer;
       }
 
       if (isCorrect) {
         score += question.points;
+        console.log('✅ CORRECT! Points:', question.points, 'Total score:', score);
+        debugInfo.push({ question: question.question, correct: true, points: question.points });
+      } else {
+        console.log('❌ WRONG!');
+        debugInfo.push({
+          question: question.question,
+          correct: false,
+          studentAnswer: answer.answer,
+          correctAnswer: question.correctAnswer
+        });
       }
     });
 
-    // Lưu kết quả bài làm
+    console.log('\n=== FINAL RESULTS ===');
+    console.log('Score:', score, '/', totalPoints);
+    console.log('Debug info:', JSON.stringify(debugInfo, null, 2));
+    console.log('========================\n');
+
     quiz.attempts.push({
       student: req.user._id,
-      answers: answers.map((a) => ({
+      answers: answers.map(a => ({
         questionId: a.questionId,
-        answer: a.answer,
+        answer: a.answer
       })),
       score,
-      suspiciousActivities: suspiciousActivities || [],
+      suspiciousActivities: suspiciousActivities || []
     });
-
     await quiz.save();
 
     res.json({ success: true, score, totalPoints });
@@ -199,5 +224,5 @@ module.exports = {
   createQuiz,
   getQuiz,
   listQuizzes,
-  submitQuiz,
-};
+  submitQuiz
+}

@@ -14,4 +14,3 @@ const generateMeetingLink = () => {
 };
 
 module.exports = { generateMeetingCode, generateMeetingLink };
-

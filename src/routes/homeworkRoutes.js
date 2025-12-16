@@ -22,4 +22,3 @@ router.post('/:id/submit', authenticate, homeworkController.submitHomework, home
 router.post('/:id/grade', authenticate, homeworkController.gradeHomework);
 
 module.exports = router;
-

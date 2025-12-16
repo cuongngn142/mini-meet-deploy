@@ -94,6 +94,10 @@ app.set("views", path.join(__dirname, "src/views"));
 // Serve static files (CSS, JS, images) và uploaded files
 app.use(express.static(path.join(__dirname, "src/public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+  "/bootstrap-icons",
+  express.static(path.join(__dirname, "node_modules/bootstrap-icons"))
+);
 
 // Make io available to routes
 app.set("io", io);

@@ -18,6 +18,7 @@ let remoteStreams = new Map();
 let peerConnections = new Map(); // key: userId
 let userIdToSocketId = new Map(); // Map userId -> socketId
 let socketIdToUserId = new Map(); // Map socketId -> userId
+let userIdToName = new Map(); // Map userId -> name
 let isMuted = false;
 let isVideoEnabled = true;
 let isScreenSharing = false;
@@ -42,6 +43,8 @@ const activeMeetingAlerts = new Map();
 let layoutManager = null;
 let screenShareOwnerId = null;
 let activeSpeakerId = null;
+let currentLayoutMode = 'auto'; // auto, tiled, spotlight, sidebar
+let updateVideoGridTimer = null;
 
 // Trạng thái preview modal (hiển thị trước khi join meeting)
 let previewStream = null;
@@ -259,6 +262,12 @@ function joinMeeting() {
         return;
     }
     hasJoinedMeeting = true;
+
+    // Lưu tên của chính mình
+    if (typeof userName !== 'undefined') {
+        userIdToName.set(userId, userName);
+    }
+
     console.log('*** Emitting join-meeting event ***', { meetingId, userId });
     socket.emit('join-meeting', { meetingId, userId });
     console.log('*** join-meeting event emitted ***');
@@ -275,8 +284,8 @@ async function startMeetingFlow() {
 }
 
 // Socket event handlers
-socket.on('user-joined', ({ userId: joinedUserId, socketId }) => {
-    console.log('*** SOCKET EVENT: user-joined ***', joinedUserId, 'socketId:', socketId);
+socket.on('user-joined', ({ userId: joinedUserId, socketId, name }) => {
+    console.log('*** SOCKET EVENT: user-joined ***', joinedUserId, 'socketId:', socketId, 'name:', name);
     // Chỉ tạo peer connection cho user khác, không phải chính mình
     if (joinedUserId && joinedUserId !== userId) {
         // Lưu mapping
@@ -284,6 +293,11 @@ socket.on('user-joined', ({ userId: joinedUserId, socketId }) => {
             userIdToSocketId.set(joinedUserId, socketId);
             socketIdToUserId.set(socketId, joinedUserId);
             console.log('Saved mapping: userId', joinedUserId, '<-> socketId', socketId);
+        }
+
+        // Lưu tên người dùng
+        if (name) {
+            userIdToName.set(joinedUserId, name);
         }
 
         // Tạo peer connection với user mới (nếu chưa có)
@@ -298,9 +312,13 @@ socket.on('user-joined', ({ userId: joinedUserId, socketId }) => {
                 socketIdToUserId.set(socketId, joinedUserId);
             }
         }
+
+        // Update participants list
+        if (typeof updateParticipantsList === 'function') {
+            updateParticipantsList();
+        }
     }
 });
-
 // Nhận danh sách participants hiện có
 socket.on('participants-list', ({ participants }) => {
     console.log('*** SOCKET EVENT: participants-list ***', participants);
@@ -311,6 +329,11 @@ socket.on('participants-list', ({ participants }) => {
             if (p.socketId) {
                 userIdToSocketId.set(p.userId, p.socketId);
                 socketIdToUserId.set(p.socketId, p.userId);
+            }
+
+            // Lưu tên người dùng
+            if (p.name) {
+                userIdToName.set(p.userId, p.name);
             }
 
             // Tạo peer connection nếu chưa có
@@ -327,13 +350,18 @@ socket.on('participants-list', ({ participants }) => {
 });
 
 // Nhận thông tin về participant mới (cho các users đã có trong room)
-socket.on('new-participant-info', ({ userId: newUserId, socketId }) => {
-    console.log('New participant info received:', newUserId, 'socketId:', socketId);
+socket.on('new-participant-info', ({ userId: newUserId, socketId, name }) => {
+    console.log('New participant info received:', newUserId, 'socketId:', socketId, 'name:', name);
     if (newUserId && newUserId !== userId) {
         // Lưu mapping
         if (socketId) {
             userIdToSocketId.set(newUserId, socketId);
             socketIdToUserId.set(socketId, newUserId);
+        }
+
+        // Lưu tên người dùng
+        if (name) {
+            userIdToName.set(newUserId, name);
         }
 
         // Tạo peer connection với user mới
@@ -353,11 +381,17 @@ socket.on('user-left', ({ userId: leftUserId, socketId }) => {
         socketIdToUserId.delete(socketId);
     }
     userIdToSocketId.delete(leftUserId);
+    userIdToName.delete(leftUserId);
 
     // Đóng peer connection
     if (peerConnections.has(leftUserId)) {
         peerConnections.get(leftUserId).close();
         peerConnections.delete(leftUserId);
+    }
+
+    // Update participants list
+    if (typeof updateParticipantsList === 'function') {
+        updateParticipantsList();
     }
 });
 
@@ -395,7 +429,7 @@ socket.on('offer', async ({ offer, from, fromUserId }) => {
         handleOffer(offer, from, targetUserId);
     }
 });
-
+ 
 async function handleOffer(offer, from, targetUserId) {
     let pc = peerConnections.get(targetUserId);
     if (!pc) {
@@ -447,15 +481,28 @@ socket.on('answer', async ({ answer, from, fromUserId }) => {
 
 socket.on('ice-candidate', async ({ candidate, from, fromUserId }) => {
     const targetUserId = fromUserId || socketIdToUserId.get(from) || from;
-    console.log('Received ICE candidate from socketId:', from, 'userId:', targetUserId);
+    console.log('[ICE] Received ICE candidate from socketId:', from, 'userId:', targetUserId);
+    console.log('[ICE] Candidate type:', candidate.candidate);
+
+    // Log candidate type
+    if (candidate.candidate.includes('typ relay')) {
+        console.log('[ICE] ✓ RELAY candidate received - TURN working!');
+    } else if (candidate.candidate.includes('typ srflx')) {
+        console.log('[ICE] ✓ SRFLX candidate received - STUN working');
+    } else if (candidate.candidate.includes('typ host')) {
+        console.log('[ICE] ✓ HOST candidate received - local network');
+    }
 
     const pc = peerConnections.get(targetUserId);
     if (pc) {
         try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('[ICE] ✓ Successfully added ICE candidate for', targetUserId);
         } catch (error) {
-            console.error('Error adding ICE candidate:', error);
+            console.error('[ICE] ✗ Error adding ICE candidate:', error);
         }
+    } else {
+        console.warn('[ICE] ✗ No peer connection found for userId:', targetUserId);
     }
 });
 
@@ -487,7 +534,6 @@ socket.on('screen-share-stopped', ({ userId: sharerId }) => {
     console.log('Screen share stopped by:', sharerId);
 });
 
-//Nhận message từ server
 socket.on('chat-message', (message) => {
     addChatMessage(message);
 });
@@ -710,10 +756,54 @@ async function createPeerConnection(targetUserId, isIncomingOffer = false) {
 
     const pc = new RTCPeerConnection({
         iceServers: [
+            // Google STUN servers
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+
+            // Metered TURN servers (more reliable)
+            {
+                urls: 'turn:a.relay.metered.ca:80',
+                username: 'b8e0a5f07ef3e4f93f8cf7e7',
+                credential: 'HdO5Zk5+z9MR0vRe'
+            },
+            {
+                urls: 'turn:a.relay.metered.ca:80?transport=tcp',
+                username: 'b8e0a5f07ef3e4f93f8cf7e7',
+                credential: 'HdO5Zk5+z9MR0vRe'
+            },
+            {
+                urls: 'turn:a.relay.metered.ca:443',
+                username: 'b8e0a5f07ef3e4f93f8cf7e7',
+                credential: 'HdO5Zk5+z9MR0vRe'
+            },
+            {
+                urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+                username: 'b8e0a5f07ef3e4f93f8cf7e7',
+                credential: 'HdO5Zk5+z9MR0vRe'
+            },
+
+            // OpenRelay backup
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ],
+        iceTransportPolicy: 'all',
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
     });
+
+    console.log('[ICE] Created peer connection for', targetUserId, 'with', pc.getConfiguration().iceServers.length, 'ICE servers');
 
     ensureLocalTracksOnPc(pc, targetUserId);
 
@@ -738,6 +828,19 @@ async function createPeerConnection(targetUserId, isIncomingOffer = false) {
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
+            const candidate = event.candidate;
+            console.log('[ICE] New candidate for', targetUserId, '- Type:', candidate.type, 'Protocol:', candidate.protocol, 'Address:', candidate.address || 'N/A');
+            console.log('[ICE] Candidate string:', candidate.candidate);
+
+            // Log candidate type for debugging
+            if (candidate.candidate.includes('typ host')) {
+                console.log('[ICE] HOST candidate (local network)');
+            } else if (candidate.candidate.includes('typ srflx')) {
+                console.log('[ICE] SRFLX candidate (STUN - public IP)');
+            } else if (candidate.candidate.includes('typ relay')) {
+                console.log('[ICE] RELAY candidate (TURN - can cross NAT)');
+            }
+
             // Tìm socketId từ userId
             const targetSocketId = userIdToSocketId.get(targetUserId);
             if (targetSocketId) {
@@ -745,20 +848,42 @@ async function createPeerConnection(targetUserId, isIncomingOffer = false) {
                     candidate: event.candidate,
                     targetId: targetSocketId
                 });
+                console.log('[ICE] Sent candidate to', targetUserId, 'via socketId:', targetSocketId);
             } else {
-                console.warn('SocketId not found for userId:', targetUserId);
+                console.warn('[ICE] SocketId not found for userId:', targetUserId, '- candidate not sent!');
             }
+        } else {
+            console.log('[ICE] All candidates gathered for', targetUserId);
         }
     };
 
+    pc.onicegatheringstatechange = () => {
+        console.log('[ICE] Gathering state for', targetUserId, ':', pc.iceGatheringState);
+    };
+
     pc.onconnectionstatechange = () => {
-        console.log('Peer connection state for', targetUserId, ':', pc.connectionState);
+        console.log('[Peer] Connection state for', targetUserId, ':', pc.connectionState);
     };
 
     pc.oniceconnectionstatechange = () => {
         console.log('ICE connection state for', targetUserId, ':', pc.iceConnectionState);
-        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-            console.warn('ICE connection issue for', targetUserId);
+
+        if (pc.iceConnectionState === 'failed') {
+            console.warn('ICE connection failed for', targetUserId, '- attempting restart');
+            // Try ICE restart
+            if (pc.restartIce) {
+                pc.restartIce();
+            }
+        } else if (pc.iceConnectionState === 'disconnected') {
+            console.warn('ICE connection disconnected for', targetUserId, '- waiting for reconnect');
+            // Wait a bit before taking action
+            setTimeout(() => {
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                    console.warn('ICE still disconnected/failed for', targetUserId, '- may need to recreate connection');
+                }
+            }, 3000);
+        } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            console.log('ICE connection established for', targetUserId);
         }
     };
 
@@ -1107,6 +1232,18 @@ function syncVideoLayout() {
     console.log('remoteStreams size:', remoteStreams.size);
     console.log('remoteStreams keys:', Array.from(remoteStreams.keys()));
 
+    // Stop all video/audio elements before clearing to prevent play() interruption
+    const existingVideos = grid.querySelectorAll('video');
+    existingVideos.forEach(v => {
+        v.pause();
+        v.srcObject = null;
+    });
+    const existingAudios = grid.querySelectorAll('audio');
+    existingAudios.forEach(a => {
+        a.pause();
+        a.srcObject = null;
+    });
+
     // Clear existing
     grid.innerHTML = '';
 
@@ -1144,6 +1281,19 @@ function syncVideoLayout() {
     const screenShareParticipant = participants.find(p => p.isScreenShare);
     const hasScreenShare = !!screenShareParticipant;
 
+    // Apply layout based on mode
+    if (currentLayoutMode === 'auto') {
+        applyAutoLayout(grid, participants, hasScreenShare, screenShareParticipant);
+    } else if (currentLayoutMode === 'tiled') {
+        applyTiledLayout(grid, participants);
+    } else if (currentLayoutMode === 'spotlight') {
+        applySpotlightLayout(grid, participants, screenShareParticipant);
+    } else if (currentLayoutMode === 'sidebar') {
+        applySidebarLayout(grid, participants, screenShareParticipant);
+    }
+}
+
+function applyAutoLayout(grid, participants, hasScreenShare, screenShareParticipant) {
     if (hasScreenShare) {
         // Screen share layout: main video + sidebar thumbnails
         grid.style.display = 'flex';
@@ -1190,28 +1340,229 @@ function syncVideoLayout() {
 
         grid.appendChild(sidebar);
     } else {
-        // Normal grid layout
-        grid.style.display = 'grid';
-        grid.style.flexDirection = '';
-        grid.style.maxHeight = '100%';
-        grid.style.overflow = 'hidden';
+        applyTiledLayout(grid, participants);
+    }
+}
 
-        // Google Meet algorithm: calculate optimal grid
-        const cols = Math.ceil(Math.sqrt(count));
-        const rows = Math.ceil(count / cols);
+function applyTiledLayout(grid, participants) {
+    // Normal grid layout
+    grid.style.display = 'grid';
+    grid.style.flexDirection = '';
+    grid.style.maxHeight = '100%';
+    grid.style.overflow = 'hidden';
 
-        // Apply grid layout
-        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-        grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
-        grid.style.alignContent = 'center'; // Center content vertically if smaller than container
+    const count = participants.length;
+    // Google Meet algorithm: calculate optimal grid
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
 
-        // Create video elements
-        participants.forEach(participant => {
+    // Apply grid layout
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+    grid.style.alignContent = 'center';
+
+    // Create video elements
+    participants.forEach(participant => {
+        const wrapper = createVideoWrapper(participant, false);
+        grid.appendChild(wrapper);
+    });
+
+    console.log(`Grid layout: ${cols} cols × ${rows} rows for ${count} participants`);
+}
+
+function applySpotlightLayout(grid, participants, screenShareParticipant) {
+    // Spotlight: 1 main video (active speaker or screen share) + small thumbnails
+    grid.style.display = 'flex';
+    grid.style.flexDirection = 'column';
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = '';
+    grid.style.maxHeight = '100%';
+    grid.style.overflow = 'hidden';
+
+    // Main spotlight area (80% height)
+    const mainArea = document.createElement('div');
+    mainArea.style.flex = '1';
+    mainArea.style.display = 'flex';
+    mainArea.style.alignItems = 'center';
+    mainArea.style.justifyContent = 'center';
+    mainArea.style.background = '#000';
+    mainArea.style.minHeight = '0';
+    mainArea.style.overflow = 'hidden';
+
+    // Thumbnails strip at bottom (20% height)
+    const thumbnailStrip = document.createElement('div');
+    thumbnailStrip.style.height = '120px';
+    thumbnailStrip.style.display = 'flex';
+    thumbnailStrip.style.flexDirection = 'row';
+    thumbnailStrip.style.gap = '8px';
+    thumbnailStrip.style.padding = '8px';
+    thumbnailStrip.style.overflowX = 'auto';
+    thumbnailStrip.style.background = 'rgba(0,0,0,0.3)';
+
+    // Determine spotlight participant (screen share > active speaker > first participant)
+    let spotlightParticipant = screenShareParticipant;
+    if (!spotlightParticipant && activeSpeakerId) {
+        spotlightParticipant = participants.find(p => p.id === activeSpeakerId);
+    }
+    if (!spotlightParticipant && participants.length > 0) {
+        spotlightParticipant = participants[0];
+    }
+
+    if (spotlightParticipant) {
+        const mainWrapper = createVideoWrapper(spotlightParticipant, true);
+        mainArea.appendChild(mainWrapper);
+    }
+
+    // Add other participants to thumbnail strip
+    participants.forEach(participant => {
+        if (participant.id !== spotlightParticipant?.id) {
             const wrapper = createVideoWrapper(participant, false);
-            grid.appendChild(wrapper);
-        });
+            wrapper.style.width = '160px';
+            wrapper.style.height = '90px';
+            wrapper.style.flexShrink = '0';
+            thumbnailStrip.appendChild(wrapper);
+        }
+    });
 
-        console.log(`Grid layout: ${cols} cols × ${rows} rows for ${count} participants`);
+    grid.appendChild(mainArea);
+    grid.appendChild(thumbnailStrip);
+}
+
+function applySidebarLayout(grid, participants, screenShareParticipant) {
+    // Sidebar: vertical thumbnails on right, main area on left
+    grid.style.display = 'flex';
+    grid.style.flexDirection = 'row';
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = '';
+    grid.style.maxHeight = '100%';
+    grid.style.overflow = 'hidden';
+
+    // Main area (primary participant or grid)
+    const mainArea = document.createElement('div');
+    mainArea.style.flex = '1';
+    mainArea.style.display = 'flex';
+    mainArea.style.alignItems = 'center';
+    mainArea.style.justifyContent = 'center';
+    mainArea.style.background = '#000';
+    mainArea.style.minHeight = '0';
+    mainArea.style.overflow = 'hidden';
+
+    // Sidebar for thumbnails
+    const sidebar = document.createElement('div');
+    sidebar.style.width = '200px';
+    sidebar.style.display = 'flex';
+    sidebar.style.flexDirection = 'column';
+    sidebar.style.gap = '8px';
+    sidebar.style.padding = '8px';
+    sidebar.style.overflowY = 'auto';
+    sidebar.style.maxHeight = '100%';
+    sidebar.style.background = 'rgba(0,0,0,0.2)';
+
+    // Determine main participant
+    let mainParticipant = screenShareParticipant;
+    if (!mainParticipant && activeSpeakerId) {
+        mainParticipant = participants.find(p => p.id === activeSpeakerId);
+    }
+    if (!mainParticipant && participants.length > 0) {
+        mainParticipant = participants[0];
+    }
+
+    if (mainParticipant) {
+        const mainWrapper = createVideoWrapper(mainParticipant, true);
+        mainArea.appendChild(mainWrapper);
+    }
+
+    // Add other participants to sidebar
+    participants.forEach(participant => {
+        if (participant.id !== mainParticipant?.id) {
+            const wrapper = createVideoWrapper(participant, false);
+            wrapper.style.height = '120px';
+            sidebar.appendChild(wrapper);
+        }
+    });
+
+    grid.appendChild(mainArea);
+    grid.appendChild(sidebar);
+}
+
+function updateVideoGrid() {
+    // Debounce to prevent rapid updates
+    if (updateVideoGridTimer) {
+        clearTimeout(updateVideoGridTimer);
+    }
+
+    updateVideoGridTimer = setTimeout(() => {
+        updateVideoGridImmediate();
+    }, 150);
+}
+
+function updateVideoGridImmediate() {
+    const grid = document.getElementById('video-grid');
+    if (!grid) {
+        console.warn('Video grid not found');
+        return;
+    }
+
+    console.log('=== updateVideoGrid START ===');
+
+    // Stop all video/audio elements before clearing
+    const existingVideos = grid.querySelectorAll('video');
+    existingVideos.forEach(v => {
+        v.pause();
+        v.srcObject = null;
+    });
+    const existingAudios = grid.querySelectorAll('audio');
+    existingAudios.forEach(a => {
+        a.pause();
+        a.srcObject = null;
+    });
+
+    // Clear existing
+    grid.innerHTML = '';
+
+    const participants = [];
+    if (localStream) {
+        const displayStream = (isScreenSharing && screenStream) ? screenStream : localStream;
+        participants.push({
+            id: userId,
+            stream: displayStream,
+            name: 'You',
+            isSelf: true,
+            isScreenShare: isScreenSharing
+        });
+    }
+
+    remoteStreams.forEach((stream, remoteId) => {
+        console.log('Adding remote participant:', remoteId, 'stream tracks:', stream.getTracks().length);
+        participants.push({
+            id: remoteId,
+            stream,
+            name: getParticipantDisplayName(remoteId),
+            isSelf: false,
+            isScreenShare: remoteId === screenShareOwnerId
+        });
+    });
+
+    const count = participants.length;
+    console.log('Total participants:', count);
+    if (count === 0) {
+        console.log('No participants to display');
+        return;
+    }
+
+    // Check if anyone is screen sharing
+    const screenShareParticipant = participants.find(p => p.isScreenShare);
+    const hasScreenShare = !!screenShareParticipant;
+
+    // Apply layout based on mode
+    if (currentLayoutMode === 'auto') {
+        applyAutoLayout(grid, participants, hasScreenShare, screenShareParticipant);
+    } else if (currentLayoutMode === 'tiled') {
+        applyTiledLayout(grid, participants);
+    } else if (currentLayoutMode === 'spotlight') {
+        applySpotlightLayout(grid, participants, screenShareParticipant);
+    } else if (currentLayoutMode === 'sidebar') {
+        applySidebarLayout(grid, participants, screenShareParticipant);
     }
 }
 
@@ -1268,10 +1619,20 @@ function createVideoWrapper(participant, isMainScreen = false) {
 
         wrapper.appendChild(video);
 
-        // Force play to handle autoplay restrictions
-        video.play().catch(err => {
-            console.warn('Video autoplay failed for', participant.name, err);
-        });
+        // Force play to handle autoplay restrictions with delay
+        setTimeout(() => {
+            if (video.parentElement) {
+                video.play().catch(err => {
+                    console.warn('Video autoplay failed for', participant.name, err);
+                    // Try again after a short delay
+                    setTimeout(() => {
+                        if (video.parentElement) {
+                            video.play().catch(e => console.warn('Second play attempt failed:', e));
+                        }
+                    }, 500);
+                });
+            }
+        }, 100);
     } else {
         const placeholder = document.createElement('div');
         placeholder.className = 'video-placeholder';
@@ -1299,7 +1660,10 @@ function createVideoWrapper(participant, isMainScreen = false) {
     // Add name label
     const label = document.createElement('div');
     label.className = 'video-label';
-    label.textContent = participant.name;
+
+    // Lấy tên từ Map hoặc dùng participant.name, hoặc dùng userId làm fallback
+    const userName = userIdToName.get(participant.id) || participant.name || `User ${participant.id}`;
+    label.textContent = userName;
     wrapper.appendChild(label);
 
     return wrapper;
@@ -1823,6 +2187,16 @@ function initializeEventListeners() {
         }
     });
 
+    // Layout selector
+    const layoutSelect = document.getElementById('layout-select');
+    if (layoutSelect) {
+        layoutSelect.addEventListener('change', (e) => {
+            currentLayoutMode = e.target.value;
+            console.log('Layout mode changed to:', currentLayoutMode);
+            updateVideoGrid();
+        });
+    }
+
     // Chat
     document.getElementById('toggle-chat').addEventListener('click', () => {
         const sidebar = document.getElementById('sidebar');
@@ -1895,36 +2269,41 @@ function initializeEventListeners() {
                 // Parse participants from meeting data
                 // For now, show current user and remote users
                 const participants = [userId, ...Array.from(remoteStreams.keys())];
-                participantsList.innerHTML = participants.map(pId => `
-                <div class="participant-item d-flex justify-content-between align-items-center p-2 border-bottom">
-                    <div class="d-flex align-items-center flex-grow-1">
-                        <div class="avatar-circle me-2" style="width: 32px; height: 32px; font-size: 14px;">
-                            ${pId === userId ? 'Y' : 'U'}
+                participantsList.innerHTML = participants.map(pId => {
+                    const participantName = pId === userId ? userName : (userIdToName.get(pId) || `User ${pId.substring(0, 8)}`);
+                    const avatarInitial = pId === userId ? (userName ? userName.charAt(0).toUpperCase() : 'Y') : (userIdToName.get(pId) ? userIdToName.get(pId).charAt(0).toUpperCase() : 'U');
+
+                    return `
+                    <div class="participant-item d-flex justify-content-between align-items-center p-2 border-bottom">
+                        <div class="d-flex align-items-center flex-grow-1">
+                            <div class="avatar-circle me-2" style="width: 32px; height: 32px; font-size: 14px;">
+                                ${avatarInitial}
+                            </div>
+                            <div>
+                                <strong>${participantName}</strong>
+                                ${pId === userId ? '<span class="badge bg-primary ms-2">You</span>' : ''}
+                                ${isHost && pId === userId ? '<span class="badge bg-danger ms-1">Host</span>' : ''}
+                                ${isCoHost && pId === userId ? '<span class="badge bg-warning ms-1">Co-Host</span>' : ''}
+                            </div>
                         </div>
-                        <div>
-                            <strong>${pId === userId ? 'You' : 'User ' + pId.substring(0, 8)}</strong>
-                            ${pId === userId ? '<span class="badge bg-primary ms-2">You</span>' : ''}
-                            ${isHost && pId === userId ? '<span class="badge bg-danger ms-1">Host</span>' : ''}
-                            ${isCoHost && pId === userId ? '<span class="badge bg-warning ms-1">Co-Host</span>' : ''}
-                        </div>
+                        ${(isHost || isCoHost) && pId !== userId ? `
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-secondary" onclick="muteParticipant('${pId}')" title="Mute">
+                                    <i class="bi bi-mic-mute"></i>
+                                </button>
+                                ${isHost ? `
+                                    <button class="btn btn-outline-primary" onclick="toggleCoHost('${pId}')" title="Make Co-Host">
+                                        <i class="bi bi-star"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="removeParticipant('${pId}')" title="Remove">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        ` : ''}
                     </div>
-                    ${(isHost || isCoHost) && pId !== userId ? `
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button class="btn btn-outline-secondary" onclick="muteParticipant('${pId}')" title="Mute">
-                                <i class="bi bi-mic-mute"></i>
-                            </button>
-                            ${isHost ? `
-                                <button class="btn btn-outline-primary" onclick="toggleCoHost('${pId}')" title="Make Co-Host">
-                                    <i class="bi bi-star"></i>
-                                </button>
-                                <button class="btn btn-outline-danger" onclick="removeParticipant('${pId}')" title="Remove">
-                                    <i class="bi bi-x-circle"></i>
-                                </button>
-                            ` : ''}
-                        </div>
-                    ` : ''}
-                </div>
-            `).join('');
+                `;
+                }).join('');
             })
             .catch(err => {
                 participantsList.innerHTML = '<p class="text-muted">Unable to load participants</p>';
@@ -1934,8 +2313,9 @@ function initializeEventListeners() {
     // Mute participant
     window.muteParticipant = function (targetUserId) {
         console.log('[Meeting] Muting participant:', targetUserId);
+        const targetName = userIdToName.get(targetUserId) || `User ${targetUserId.substring(0, 8)}`;
         socket.emit('mute-user', { meetingId, targetUserId });
-        alert(`Mute request sent to participant ${targetUserId.substring(0, 8)}`);
+        alert(`Mute request sent to ${targetName}`);
     };
 
     // Toggle co-host status
@@ -1946,9 +2326,10 @@ function initializeEventListeners() {
             return;
         }
 
-        if (confirm(`Make this user a co-host? Co-hosts can mute participants and manage meeting settings.`)) {
+        const targetName = userIdToName.get(targetUserId) || `User ${targetUserId.substring(0, 8)}`;
+        if (confirm(`Make ${targetName} a co-host? Co-hosts can mute participants and manage meeting settings.`)) {
             socket.emit('set-co-host', { meetingId, targetUserId });
-            alert(`Co-host status updated for ${targetUserId.substring(0, 8)}`);
+            alert(`Co-host status updated for ${targetName}`);
             // Update participants list
             setTimeout(updateParticipantsList, 500);
         }
@@ -1962,9 +2343,10 @@ function initializeEventListeners() {
             return;
         }
 
-        if (confirm(`Remove this participant from the meeting?`)) {
+        const targetName = userIdToName.get(targetUserId) || `User ${targetUserId.substring(0, 8)}`;
+        if (confirm(`Remove ${targetName} from the meeting?`)) {
             socket.emit('remove-participant', { meetingId, targetUserId });
-            alert(`Participant ${targetUserId.substring(0, 8)} has been removed`);
+            alert(`${targetName} has been removed`);
         }
     };
 
@@ -2331,4 +2713,3 @@ if (document.readyState === 'loading') {
 } else {
     initializeEventListeners();
 }
-

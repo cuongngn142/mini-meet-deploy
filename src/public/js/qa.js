@@ -344,4 +344,3 @@ if (typeof socket !== 'undefined') {
         }
     });
 }
-

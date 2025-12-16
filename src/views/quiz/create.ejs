@@ -98,7 +98,7 @@
     include('../partials/footer') %> <% } %>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- <script>
+    <script>
       let questionCount = -1;
       function addQuestion() {
         questionCount++;
@@ -178,108 +178,6 @@
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(data),
-          }).then((res) => {
-            if (res.ok) {
-              window.location.href = "/quiz";
-            } else {
-              alert("Error creating quiz");
-            }
-          });
-        });
-    </script> -->
-    <script>
-      let questionCount = 0;
-
-      function addQuestion() {
-        const container = document.getElementById("questions-container");
-
-        const div = document.createElement("div");
-        div.className = "card mb-3 p-3";
-        div.setAttribute("data-index", questionCount);
-
-        div.innerHTML = `
-      <div class="mb-3">
-        <label class="form-label">Question</label>
-        <input type="text" class="form-control question-text">
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Type</label>
-        <select class="form-select question-type" onchange="updateQuestionType(this)">
-          <option value="multiple-choice">Multiple Choice</option>
-          <option value="true-false">True/False</option>
-        </select>
-      </div>
-
-      <div class="mb-3 question-options">
-        <label class="form-label">Options (one per line)</label>
-        <textarea class="form-control options-input" rows="4" placeholder="Option 1\nOption 2"></textarea>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Correct Answer</label>
-        <input type="text" class="form-control correct-answer">
-      </div>
-
-      <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">Remove</button>
-    `;
-
-        container.appendChild(div);
-        questionCount++;
-      }
-
-      // True/False update
-      function updateQuestionType(select) {
-        const card = select.closest(".card");
-        const optionsBox = card.querySelector(".question-options");
-
-        if (select.value === "true-false") {
-          optionsBox.innerHTML = `
-        <label class="form-label">Options</label>
-        <textarea class="form-control options-input" readonly>True\nFalse</textarea>
-      `;
-        } else {
-          optionsBox.innerHTML = `
-        <label class="form-label">Options (one per line)</label>
-        <textarea class="form-control options-input" rows="4"></textarea>
-      `;
-        }
-      }
-
-      // Submit
-      document
-        .getElementById("quiz-form")
-        .addEventListener("submit", function (e) {
-          e.preventDefault();
-
-          const questions = [
-            ...document.querySelectorAll("#questions-container .card"),
-          ].map((card) => {
-            return {
-              question: card.querySelector(".question-text").value.trim(),
-              type: card.querySelector(".question-type").value,
-              options: card
-                .querySelector(".options-input")
-                .value.split("\n")
-                .map((o) => o.trim())
-                .filter((o) => o.length > 0),
-              correctAnswer: card.querySelector(".correct-answer").value.trim(),
-            };
-          });
-
-          const data = {
-            title: this.title.value,
-            description: this.description.value,
-            classId: this.classId.value,
-            timeLimit: this.timeLimit.value,
-            endDate: this.endDate.value,
-            questions,
-          };
-
-          fetch(this.action, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
           }).then((res) => {
             if (res.ok) {

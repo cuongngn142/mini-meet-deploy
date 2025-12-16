@@ -14,6 +14,8 @@
     let captionLanguage = 'vi-VN'; // Mặc định tiếng Việt
     let captionHistory = [];
     const MAX_HISTORY = 50; // Giới hạn lịch sử phụ đề
+    let translationEnabled = false;
+    let translationTargetLang = 'en'; // Ngôn ngữ đích cho dịch
 
     /**
      * Khởi động chức năng live caption
@@ -239,14 +241,26 @@
     /**
      * Thêm phụ đề vào lịch sử
      */
-    function addCaptionToHistory(text) {
+    async function addCaptionToHistory(text) {
         console.log('[Caption] addCaptionToHistory called with text:', text);
         const timestamp = new Date().toLocaleTimeString('vi-VN');
         const caption = {
             text: text.trim(),
             timestamp,
-            userId
+            userId,
+            originalText: text.trim()
         };
+
+        // Nếu bật dịch, thực hiện dịch
+        if (translationEnabled) {
+            try {
+                const translatedText = await translateText(text, translationTargetLang);
+                caption.translatedText = translatedText;
+            } catch (error) {
+                console.error('[Caption] Translation error:', error);
+                caption.translatedText = null;
+            }
+        }
 
         captionHistory.push(caption);
         console.log('[Caption] Caption added to history, total:', captionHistory.length);
@@ -261,18 +275,58 @@
     }
 
     /**
+     * Dịch văn bản sử dụng MyMemory API (miễn phí)
+     */
+    async function translateText(text, targetLang) {
+        // Detect source language
+        let sourceLang = 'auto';
+        if (captionLanguage.startsWith('vi')) {
+            sourceLang = 'vi';
+        } else if (captionLanguage.startsWith('en')) {
+            sourceLang = 'en';
+        }
+
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.responseStatus === 200 && data.responseData) {
+                return data.responseData.translatedText;
+            } else {
+                throw new Error('Translation failed');
+            }
+        } catch (error) {
+            console.error('[Caption] Translation API error:', error);
+            // Fallback: return original text
+            return text;
+        }
+    }
+
+    /**
      * Hiển thị lịch sử phụ đề
      */
     function renderCaptionHistory() {
         const historyEl = document.getElementById('caption-history');
         if (!historyEl) return;
 
-        historyEl.innerHTML = captionHistory.map((caption, index) => `
-        <div class="caption-history-item" data-index="${index}">
-            <small class="text-muted">${caption.timestamp}</small>
-            <div class="caption-text">${escapeHtml(caption.text)}</div>
-        </div>
-    `).join('');
+        historyEl.innerHTML = captionHistory.map((caption, index) => {
+            let html = `
+            <div class="caption-history-item mb-2 p-2 border-bottom" data-index="${index}">
+                <small class="text-muted">${caption.timestamp}</small>
+                <div class="caption-text mt-1">${escapeHtml(caption.text)}</div>`;
+
+            if (caption.translatedText && caption.translatedText !== caption.text) {
+                html += `
+                <div class="translated-text mt-1 text-primary" style="font-style: italic;">
+                    <small><i class="bi bi-translate"></i> ${escapeHtml(caption.translatedText)}</small>
+                </div>`;
+            }
+
+            html += `</div>`;
+            return html;
+        }).join('');
 
         // Auto scroll to bottom
         historyEl.scrollTop = historyEl.scrollHeight;
@@ -400,7 +454,14 @@
             return;
         }
 
-        const content = captionHistory.map(c => `[${c.timestamp}] ${c.text}`).join('\n');
+        let content = captionHistory.map(c => {
+            let line = `[${c.timestamp}] ${c.text}`;
+            if (c.translatedText && c.translatedText !== c.text) {
+                line += `\n    → [Translated] ${c.translatedText}`;
+            }
+            return line;
+        }).join('\n\n');
+
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
 
@@ -416,16 +477,31 @@
      * Nhận caption từ user khác (qua socket)
      */
     if (typeof socket !== 'undefined') {
-        socket.on('caption-text', ({ userId: senderId, text, timestamp }) => {
+        socket.on('caption-text', async ({ userId: senderId, text, timestamp }) => {
             // Chỉ hiển thị caption từ người khác nếu đang bật caption panel
             const panel = document.getElementById('caption-panel');
             if (panel && !panel.classList.contains('d-none')) {
                 const time = new Date(timestamp).toLocaleTimeString('vi-VN');
-                captionHistory.push({
+                const caption = {
                     text: text.trim(),
                     timestamp: time,
-                    userId: senderId
-                });
+                    userId: senderId,
+                    originalText: text.trim()
+                };
+
+                // Nếu bật dịch, thực hiện dịch caption từ người khác
+                if (translationEnabled) {
+                    try {
+                        const translatedText = await translateText(text, translationTargetLang);
+                        caption.translatedText = translatedText;
+                        console.log('[Caption] Remote caption translated:', text, '→', translatedText);
+                    } catch (error) {
+                        console.error('[Caption] Translation error for remote caption:', error);
+                        caption.translatedText = null;
+                    }
+                }
+
+                captionHistory.push(caption);
 
                 if (captionHistory.length > MAX_HISTORY) {
                     captionHistory.shift();
@@ -504,6 +580,32 @@
                 }
             });
         });
+
+        // Translation toggle
+        const translationToggle = document.getElementById('enable-translation');
+        if (translationToggle) {
+            translationToggle.addEventListener('change', (e) => {
+                translationEnabled = e.target.checked;
+                const langGroup = document.getElementById('translation-lang-group');
+                if (langGroup) {
+                    if (translationEnabled) {
+                        langGroup.classList.remove('d-none');
+                    } else {
+                        langGroup.classList.add('d-none');
+                    }
+                }
+                console.log('[Caption] Translation enabled:', translationEnabled);
+            });
+        }
+
+        // Translation target language
+        const translationLangSelect = document.getElementById('translation-target-lang');
+        if (translationLangSelect) {
+            translationLangSelect.addEventListener('change', (e) => {
+                translationTargetLang = e.target.value;
+                console.log('[Caption] Translation target language:', translationTargetLang);
+            });
+        }
     }
 
     // Export for use in meeting.js
@@ -533,4 +635,4 @@
         setTimeout(initializeCaptionControls, 100);
     }
 
-})(); // End IIFE
+})(); 
