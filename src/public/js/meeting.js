@@ -9,41 +9,70 @@
  * - Preview modal trước khi join
  */
 
-// Socket.io connection
+// Socket kết nối realtime
 const socket = io();
 
 // Biến quản lý media streams và connections
-let localStream = null;
-let remoteStreams = new Map();
-let peerConnections = new Map(); // key: userId
+let localStream = null; //camera, mic
+let remoteStreams = new Map(); //key:userId, value: MediaStream
+let peerConnections = new Map(); // key: userId - 1u-1con - ICE, SDP, track
+
+//Mapping user - socket
 let userIdToSocketId = new Map(); // Map userId -> socketId
 let socketIdToUserId = new Map(); // Map socketId -> userId
 let userIdToName = new Map(); // Map userId -> name
+
+//Mic, cam
 let isMuted = false;
 let isVideoEnabled = true;
+
+//ScreenSharing
 let isScreenSharing = false;
 let screenStream = null;
+
+//Raise Hand
 let handRaised = false;
+
+//Khởi tạo media 1 lần 
 let mediaInitialized = false; // Flag để đảm bảo chỉ init 1 lần
+
+//Whiteboard
 let whiteboardCanvas = null;
 let whiteboardCtx = null;
-let whiteboardStrokes = [];
+let whiteboardStrokes = []; //nét vẽ
+
+//Trạng thái
 let whiteboardIsVisible = false;
 let whiteboardDrawing = false;
 let whiteboardLastPoint = null;
+
+//Công cụ
 let whiteboardPenColor = '#ff4757';
 let whiteboardPenSize = 4;
 let whiteboardTool = 'pen';
+
+//Bán kính xóa khi dùng tẩy
 const whiteboardEraseThresholdPx = 20;
+
+//Role
 const canEditWhiteboard = typeof isHost !== 'undefined' ? (isHost || isCoHost) : false;
+
+//Cấm chat, share màn hình
 let isScreenShareAllowed = true;
 let isChatDisabled = false;
+
+//Mỗi nét vẽ có 1 id riêng
 const generateStrokeId = () => `stroke_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+//Thoogn báo realtime
 const activeMeetingAlerts = new Map();
+
 let layoutManager = null;
+let currentLayoutMode = 'auto'; // auto, tiled, spotlight, sidebar
+
 let screenShareOwnerId = null;
 let activeSpeakerId = null;
-let currentLayoutMode = 'auto'; // auto, tiled, spotlight, sidebar
+
 let updateVideoGridTimer = null;
 
 // Trạng thái preview modal (hiển thị trước khi join meeting)
@@ -70,7 +99,7 @@ async function showPreviewModal() {
     const micIcon = document.getElementById('preview-mic-icon');
     const joinBtn = document.getElementById('join-meeting-btn');
 
-    // Get initial media stream
+    // Lấy media stream ban đầu
     try {
         previewStream = await navigator.mediaDevices.getUserMedia({
             video: true,
@@ -82,7 +111,7 @@ async function showPreviewModal() {
     } catch (error) {
         console.error('Error getting media:', error);
 
-        // Try audio only if video fails
+        // Nếu video không hoạt động, thử audio
         try {
             previewStream = await navigator.mediaDevices.getUserMedia({
                 video: false,
@@ -103,7 +132,7 @@ async function showPreviewModal() {
     }
 
     function updatePreviewButtons() {
-        // Update camera button
+        // Cập nhật nút camera
         if (previewCameraEnabled) {
             cameraIcon.className = 'bi bi-camera-video';
             cameraBtn.classList.remove('btn-outline-danger');
@@ -118,7 +147,7 @@ async function showPreviewModal() {
             previewOffMessage.classList.remove('d-none');
         }
 
-        // Update mic button
+        // Cập nhật nút mic
         if (previewMicEnabled) {
             micIcon.className = 'bi bi-mic';
             micBtn.classList.remove('btn-outline-danger');
@@ -130,7 +159,7 @@ async function showPreviewModal() {
         }
     }
 
-    // Camera toggle
+    // Bật/tắt camera
     cameraBtn.addEventListener('click', () => {
         previewCameraEnabled = !previewCameraEnabled;
         if (previewStream) {
@@ -142,7 +171,7 @@ async function showPreviewModal() {
         updatePreviewButtons();
     });
 
-    // Mic toggle
+    // Bật/tắt mic
     micBtn.addEventListener('click', () => {
         previewMicEnabled = !previewMicEnabled;
         if (previewStream) {
@@ -154,26 +183,26 @@ async function showPreviewModal() {
         updatePreviewButtons();
     });
 
-    // Join button
+    // Nút tham gia
     joinBtn.addEventListener('click', async () => {
-        // Stop preview stream
+        // Dừng preview stream
         if (previewStream) {
             previewStream.getTracks().forEach(track => track.stop());
         }
 
-        // Set initial states
+        // Đồng bộ với preview modal
         isMuted = !previewMicEnabled;
         isVideoEnabled = previewCameraEnabled;
 
-        // Hide modal and show meeting container
+        // Đóng modal mở room
         modal.hide();
         document.getElementById('meeting-container').style.display = '';
 
-        // Initialize meeting with selected settings and join
+        // Lấy media từ máy
         await initializeMedia();
         joinMeeting();
 
-        // Initialize caption controls after meeting container is shown
+        // Khởi tạo caption controls khi container được hiển thị
         if (typeof window.initializeCaptionControls === 'function') {
             setTimeout(() => {
                 window.initializeCaptionControls();
@@ -237,6 +266,7 @@ async function ensureLocalTracksOnPc(pc, targetUserId) {
     console.warn('Unable to attach local tracks for peer', targetUserId);
 }
 
+//Khi dùng share screen thì ngưng video
 async function ensureScreenTrackPriority(pc) {
     if (!isScreenSharing || !screenStream) {
         return;
@@ -269,7 +299,7 @@ function joinMeeting() {
     }
 
     console.log('*** Emitting join-meeting event ***', { meetingId, userId });
-    socket.emit('join-meeting', { meetingId, userId });
+    socket.emit('join-meeting', { meetingId, userId }); //gửi thông báo đến server
     console.log('*** join-meeting event emitted ***');
 }
 
@@ -283,7 +313,7 @@ async function startMeetingFlow() {
     }
 }
 
-// Socket event handlers
+// Xử lí sự kiện socket
 socket.on('user-joined', ({ userId: joinedUserId, socketId, name }) => {
     console.log('*** SOCKET EVENT: user-joined ***', joinedUserId, 'socketId:', socketId, 'name:', name);
     // Chỉ tạo peer connection cho user khác, không phải chính mình
@@ -313,7 +343,7 @@ socket.on('user-joined', ({ userId: joinedUserId, socketId, name }) => {
             }
         }
 
-        // Update participants list
+        // Cập nhật danh sách người tham gia
         if (typeof updateParticipantsList === 'function') {
             updateParticipantsList();
         }
@@ -395,6 +425,7 @@ socket.on('user-left', ({ userId: leftUserId, socketId }) => {
     }
 });
 
+// Nhận offer từ người khác gửi vào 
 socket.on('offer', async ({ offer, from, fromUserId }) => {
     // Ưu tiên dùng fromUserId từ server để tránh lệ thuộc vào mapping bất đồng bộ
     const targetUserId = fromUserId || socketIdToUserId.get(from) || from;
@@ -429,7 +460,8 @@ socket.on('offer', async ({ offer, from, fromUserId }) => {
         handleOffer(offer, from, targetUserId);
     }
 });
- 
+
+// Nhận offer → gắn vào PeerConnection → tạo answer → gửi answer lại
 async function handleOffer(offer, from, targetUserId) {
     let pc = peerConnections.get(targetUserId);
     if (!pc) {
@@ -457,6 +489,7 @@ async function handleOffer(offer, from, targetUserId) {
     }
 }
 
+// Nhận answer từ người khác gửi vào
 socket.on('answer', async ({ answer, from, fromUserId }) => {
     const targetUserId = fromUserId || socketIdToUserId.get(from) || from;
     console.log('Received answer from socketId:', from, 'userId:', targetUserId);
@@ -479,17 +512,18 @@ socket.on('answer', async ({ answer, from, fromUserId }) => {
     }
 });
 
+// Browser dùng candidate tìm connection tốt nhất (ICE)
 socket.on('ice-candidate', async ({ candidate, from, fromUserId }) => {
     const targetUserId = fromUserId || socketIdToUserId.get(from) || from;
     console.log('[ICE] Received ICE candidate from socketId:', from, 'userId:', targetUserId);
     console.log('[ICE] Candidate type:', candidate.candidate);
 
     // Log candidate type
-    if (candidate.candidate.includes('typ relay')) {
+    if (candidate.candidate.includes('typ relay')) { //relay qua Turn server
         console.log('[ICE] ✓ RELAY candidate received - TURN working!');
-    } else if (candidate.candidate.includes('typ srflx')) {
+    } else if (candidate.candidate.includes('typ srflx')) { //public qua IP NAT, STUN
         console.log('[ICE] ✓ SRFLX candidate received - STUN working');
-    } else if (candidate.candidate.includes('typ host')) {
+    } else if (candidate.candidate.includes('typ host')) { //local lan
         console.log('[ICE] ✓ HOST candidate received - local network');
     }
 
@@ -675,21 +709,20 @@ socket.on('meeting-ended', ({ message }) => {
     const modal = new bootstrap.Modal(document.getElementById('meetingEndedModal'));
     modal.show();
 
-    // Clean up resources
+    // Ngắt hoàn toàn các track (stop - ngắt hoàn toàn)
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
     }
 
-    // Close all peer connections
+    // Đóng tất cả các kết nối
     peerConnections.forEach((pc, peerId) => {
         pc.close();
     });
     peerConnections.clear();
 
-    // Disconnect socket
+    // Ngắt kết nối đến socket
     socket.disconnect();
 
-    // Auto redirect after 3 seconds
     setTimeout(() => {
         window.location.href = '/meeting';
     }, 3000);
@@ -756,56 +789,40 @@ async function createPeerConnection(targetUserId, isIncomingOffer = false) {
 
     const pc = new RTCPeerConnection({
         iceServers: [
-            // Google STUN servers
+            // Google STUN server
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
 
             // Metered TURN servers (more reliable)
             {
-                urls: 'turn:a.relay.metered.ca:80',
-                username: 'b8e0a5f07ef3e4f93f8cf7e7',
-                credential: 'HdO5Zk5+z9MR0vRe'
-            },
-            {
-                urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-                username: 'b8e0a5f07ef3e4f93f8cf7e7',
-                credential: 'HdO5Zk5+z9MR0vRe'
-            },
-            {
-                urls: 'turn:a.relay.metered.ca:443',
-                username: 'b8e0a5f07ef3e4f93f8cf7e7',
-                credential: 'HdO5Zk5+z9MR0vRe'
-            },
-            {
-                urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+                urls: [
+                    'turn:a.relay.metered.ca:80',
+                    'turn:a.relay.metered.ca:80?transport=tcp',
+                    'turn:a.relay.metered.ca:443',
+                    'turn:a.relay.metered.ca:443?transport=tcp'
+                ],
                 username: 'b8e0a5f07ef3e4f93f8cf7e7',
                 credential: 'HdO5Zk5+z9MR0vRe'
             },
 
             // OpenRelay backup
             {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
+                urls: [
+                    'turn:openrelay.metered.ca:80',
+                    'turn:openrelay.metered.ca:443'
+                ],
                 username: 'openrelayproject',
                 credential: 'openrelayproject'
             }
         ],
-        iceTransportPolicy: 'all',
-        iceCandidatePoolSize: 10,
-        bundlePolicy: 'max-bundle',
+        iceTransportPolicy: 'all', // LAN(host)->STUN(NAT)->TURN
+        iceCandidatePoolSize: 10, // Giảm độ trễ
+        bundlePolicy: 'max-bundle', // Sắp xếp audio, video, data vào pc
         rtcpMuxPolicy: 'require'
     });
 
     console.log('[ICE] Created peer connection for', targetUserId, 'with', pc.getConfiguration().iceServers.length, 'ICE servers');
 
-    ensureLocalTracksOnPc(pc, targetUserId);
+    ensureLocalTracksOnPc(pc, targetUserId); //Đảm bảo các track được gắn vào PeerConnection
 
     pc.ontrack = (event) => {
         console.log('ontrack event fired for:', targetUserId);
@@ -958,7 +975,7 @@ async function createPeerConnection(targetUserId, isIncomingOffer = false) {
     return pc;
 }
 
-// Media controls
+// Khởi tạo và quản lý camera + mic của người dùng
 async function initializeMedia() {
     // Chỉ init 1 lần
     if (mediaInitialized) {
@@ -974,7 +991,7 @@ async function initializeMedia() {
             localStream.getTracks().forEach(track => track.stop());
         }
 
-        // Try to get both video and audio
+        // Thử video + audio
         try {
             localStream = await navigator.mediaDevices.getUserMedia({
                 video: isVideoEnabled,
@@ -982,7 +999,7 @@ async function initializeMedia() {
             });
         } catch (videoError) {
             console.warn('Failed to get video, trying audio only:', videoError);
-            // Fallback to audio only if video fails
+
             localStream = await navigator.mediaDevices.getUserMedia({
                 video: false,
                 audio: true
@@ -990,7 +1007,7 @@ async function initializeMedia() {
             isVideoEnabled = false;
         }
 
-        // Apply initial video state (if we have video track)
+        // Áp trạng thái ban đầu cho track (video)
         const videoTrack = localStream.getVideoTracks()[0];
         if (videoTrack) {
             videoTrack.enabled = isVideoEnabled;
@@ -999,7 +1016,7 @@ async function initializeMedia() {
             console.log('No video track available');
         }
 
-        // Apply initial mic state
+        // Áp trạng thái ban đầu cho track (audio)
         const audioTrack = localStream.getAudioTracks()[0];
         if (audioTrack) {
             audioTrack.enabled = !isMuted;
@@ -1010,7 +1027,7 @@ async function initializeMedia() {
         addLocalVideo(localStream);
         mediaInitialized = true;
 
-        // Update UI buttons to reflect initial state
+        // Cập nhật nút media
         updateMediaButtons();
 
         // Cập nhật tất cả peer connections với localStream mới
@@ -1043,7 +1060,7 @@ async function initializeMedia() {
             }
         });
 
-        // Notify others with initial states
+        // Thông báo cho server về trạng thái ban đầu
         socket.emit('toggle-camera', { meetingId, enabled: isVideoEnabled });
         socket.emit('toggle-microphone', { meetingId, enabled: !isMuted });
     } catch (error) {
@@ -1053,7 +1070,7 @@ async function initializeMedia() {
 }
 
 function updateMediaButtons() {
-    // Update mute button
+    // Cập nhật nút mute
     const toggleMic = document.getElementById('toggle-mic');
     const micIcon = toggleMic?.querySelector('i');
     if (isMuted) {
@@ -1066,7 +1083,7 @@ function updateMediaButtons() {
         if (micIcon) micIcon.className = 'bi bi-mic';
     }
 
-    // Update camera button
+    // Cập nhật nút camera
     const toggleCamera = document.getElementById('toggle-camera');
     const cameraIcon = toggleCamera?.querySelector('i');
     if (!isVideoEnabled) {
@@ -1118,13 +1135,14 @@ async function startScreenShare() {
         });
         await Promise.all(replaceOps);
 
+        //Thấy màn hình mình đang share
         const { video: localVideo } = getParticipantMediaElements(userId);
         if (localVideo) {
             localVideo.srcObject = stream;
         }
 
         isScreenSharing = true;
-        screenShareOwnerId = userId;
+        screenShareOwnerId = userId; //Ai share
         syncVideoLayout();
         socket.emit('start-screen-share', { meetingId, streamId: screenVideoTrack.id });
     } catch (error) {
@@ -1167,7 +1185,7 @@ async function stopScreenShare(options = { emitEvent: true }) {
     if (screenShareOwnerId === userId) {
         screenShareOwnerId = null;
     }
-    syncVideoLayout();
+    syncVideoLayout(); 
 
     if (options?.emitEvent) {
         socket.emit('stop-screen-share', { meetingId });
@@ -1188,14 +1206,14 @@ function addRemoteVideo(targetUserId, stream) {
         console.warn('No remote stream for user:', targetUserId);
         return;
     }
-    console.log('*** addRemoteVideo called ***');
+    console.log(' addRemoteVideo called ');
     console.log('  targetUserId:', targetUserId);
     console.log('  stream id:', stream.id);
     console.log('  stream tracks:', stream.getTracks().length);
     stream.getTracks().forEach(track => {
         console.log('    - track:', track.kind, track.id, 'enabled:', track.enabled, 'readyState:', track.readyState);
     });
-    remoteStreams.set(targetUserId, stream);
+    remoteStreams.set(targetUserId, stream); //Lưu stream theo userId
     console.log('  remoteStreams size after add:', remoteStreams.size);
     syncVideoLayout();
 }
@@ -1227,12 +1245,12 @@ function syncVideoLayout() {
         return;
     }
 
-    console.log('=== syncVideoLayout START ===');
+    console.log('syncVideoLayout START');
     console.log('localStream:', localStream ? 'exists' : 'null');
     console.log('remoteStreams size:', remoteStreams.size);
     console.log('remoteStreams keys:', Array.from(remoteStreams.keys()));
 
-    // Stop all video/audio elements before clearing to prevent play() interruption
+    // Dừng các track cũ
     const existingVideos = grid.querySelectorAll('video');
     existingVideos.forEach(v => {
         v.pause();
@@ -1244,7 +1262,7 @@ function syncVideoLayout() {
         a.srcObject = null;
     });
 
-    // Clear existing
+    // Xóa các DOM cũ
     grid.innerHTML = '';
 
     const participants = [];
@@ -1277,11 +1295,11 @@ function syncVideoLayout() {
         return;
     }
 
-    // Check if anyone is screen sharing
+    // Xác định trạng thái screen share
     const screenShareParticipant = participants.find(p => p.isScreenShare);
     const hasScreenShare = !!screenShareParticipant;
 
-    // Apply layout based on mode
+    // Chọn layout phù hợp
     if (currentLayoutMode === 'auto') {
         applyAutoLayout(grid, participants, hasScreenShare, screenShareParticipant);
     } else if (currentLayoutMode === 'tiled') {
@@ -1303,7 +1321,7 @@ function applyAutoLayout(grid, participants, hasScreenShare, screenShareParticip
         grid.style.maxHeight = '100%';
         grid.style.overflow = 'hidden';
 
-        // Create main screen share area
+        // Tạo khu vực chính cho screen share
         const mainArea = document.createElement('div');
         mainArea.style.flex = '1';
         mainArea.style.display = 'flex';
@@ -1314,7 +1332,7 @@ function applyAutoLayout(grid, participants, hasScreenShare, screenShareParticip
         mainArea.style.maxHeight = '100%';
         mainArea.style.overflow = 'hidden';
 
-        // Create sidebar for other participants
+        // Tạo siderbar cho webcam các participant
         const sidebar = document.createElement('div');
         sidebar.style.width = '200px';
         sidebar.style.display = 'flex';
@@ -1324,12 +1342,12 @@ function applyAutoLayout(grid, participants, hasScreenShare, screenShareParticip
         sidebar.style.overflowY = 'auto';
         sidebar.style.maxHeight = '100%';
 
-        // Add screen share to main area
+        //Thêm share screen to main area
         const mainWrapper = createVideoWrapper(screenShareParticipant, true);
         mainArea.appendChild(mainWrapper);
         grid.appendChild(mainArea);
 
-        // Add other participants to sidebar
+        // Thêm các user khác vào siderbar
         participants.forEach(participant => {
             if (!participant.isScreenShare) {
                 const wrapper = createVideoWrapper(participant, false);
@@ -1485,8 +1503,8 @@ function applySidebarLayout(grid, participants, screenShareParticipant) {
     grid.appendChild(sidebar);
 }
 
+// Tạm hoãn mới updateVideoGrid
 function updateVideoGrid() {
-    // Debounce to prevent rapid updates
     if (updateVideoGridTimer) {
         clearTimeout(updateVideoGridTimer);
     }
@@ -1496,6 +1514,7 @@ function updateVideoGrid() {
     }, 150);
 }
 
+// Cập nhật video grid ngay lập tức
 function updateVideoGridImmediate() {
     const grid = document.getElementById('video-grid');
     if (!grid) {
@@ -1503,9 +1522,9 @@ function updateVideoGridImmediate() {
         return;
     }
 
-    console.log('=== updateVideoGrid START ===');
+    console.log('updateVideoGrid START');
 
-    // Stop all video/audio elements before clearing
+    // Dừng và giải phóng track cũ
     const existingVideos = grid.querySelectorAll('video');
     existingVideos.forEach(v => {
         v.pause();
@@ -1517,7 +1536,7 @@ function updateVideoGridImmediate() {
         a.srcObject = null;
     });
 
-    // Clear existing
+    // Xóa DOM cũ
     grid.innerHTML = '';
 
     const participants = [];
@@ -1550,11 +1569,11 @@ function updateVideoGridImmediate() {
         return;
     }
 
-    // Check if anyone is screen sharing
+    // Xác định trạng thái screen share
     const screenShareParticipant = participants.find(p => p.isScreenShare);
     const hasScreenShare = !!screenShareParticipant;
 
-    // Apply layout based on mode
+    // Chọn layout theo chế độ hiện tại
     if (currentLayoutMode === 'auto') {
         applyAutoLayout(grid, participants, hasScreenShare, screenShareParticipant);
     } else if (currentLayoutMode === 'tiled') {
@@ -1566,12 +1585,12 @@ function updateVideoGridImmediate() {
     }
 }
 
+//Khung video
 function createVideoWrapper(participant, isMainScreen = false) {
     const wrapper = document.createElement('div');
     wrapper.className = 'video-wrapper';
     wrapper.setAttribute('data-participant-id', participant.id);
 
-    // Apply size constraints for main screen
     if (isMainScreen) {
         wrapper.style.width = '100%';
         wrapper.style.height = '100%';
@@ -1619,7 +1638,7 @@ function createVideoWrapper(participant, isMainScreen = false) {
 
         wrapper.appendChild(video);
 
-        // Force play to handle autoplay restrictions with delay
+        // Ép video chạy (chống lỗi autoplay)
         setTimeout(() => {
             if (video.parentElement) {
                 video.play().catch(err => {
@@ -1643,7 +1662,7 @@ function createVideoWrapper(participant, isMainScreen = false) {
         wrapper.appendChild(placeholder);
     }
 
-    // Add audio element for remote participants
+    // Thêm audio cho participant
     if (!participant.isSelf && participant.stream) {
         const audio = document.createElement('audio');
         audio.className = 'participant-audio';
@@ -1682,6 +1701,7 @@ function getParticipantWrapper(participantId) {
     return document.querySelector(`#video-grid .video-wrapper[data-participant-id="${safeId}"]`);
 }
 
+//Lấy trong khung video trả về wrapper + video + audio\
 function getParticipantMediaElements(participantId) {
     const wrapper = getParticipantWrapper(participantId);
     return {
@@ -1691,6 +1711,7 @@ function getParticipantMediaElements(participantId) {
     };
 }
 
+//Quản lý cảnh báo trong cuộc họp
 function setMeetingAlert(key, message) {
     const banner = document.getElementById('meeting-alert');
     if (!banner) {
@@ -2107,6 +2128,7 @@ function initializeWhiteboard() {
 
 let eventListenersInitialized = false;
 
+// Xử lý trung tâm
 function initializeEventListeners() {
     // Chỉ init 1 lần
     if (eventListenersInitialized) {

@@ -46,6 +46,7 @@
             recognition = null;
         }
 
+        //Web Speech API
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
 
@@ -133,16 +134,13 @@
                 setTimeout(() => {
                     if (captionRunning && recognition) {
                         try {
-                            // Check if recognition is not already running
                             recognition.start();
                             console.log('[Caption] Recognition restarted successfully');
                         } catch (error) {
-                            // Ignore 'already started' errors, log others
                             if (error.message && error.message.includes('already started')) {
                                 console.log('[Caption] Recognition already running, no need to restart');
                             } else {
                                 console.error('[Caption] Error restarting recognition:', error);
-                                // Nếu lỗi nghiêm trọng, reset state
                                 captionRunning = false;
                                 window.captionRunning = false;
                                 updateCaptionButton();
@@ -278,7 +276,6 @@
      * Dịch văn bản sử dụng MyMemory API (miễn phí)
      */
     async function translateText(text, targetLang) {
-        // Detect source language
         let sourceLang = 'auto';
         if (captionLanguage.startsWith('vi')) {
             sourceLang = 'vi';

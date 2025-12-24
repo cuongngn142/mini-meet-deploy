@@ -57,7 +57,7 @@ async function getDevices() {
     };
 }
 
-// Video quality control
+// Chất lượng video
 function setVideoQuality(stream, quality) {
     const videoTrack = stream.getVideoTracks()[0];
     const constraints = {
@@ -68,13 +68,12 @@ function setVideoQuality(stream, quality) {
     videoTrack.applyConstraints(constraints);
 }
 
-// Noise cancellation (basic WebAudio API)
+// Khử nhiễu (basic WebAudio API)
 function applyNoiseCancellation(audioStream) {
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(audioStream);
     const destination = audioContext.createMediaStreamDestination();
 
-    // Basic high-pass filter for noise reduction
     const filter = audioContext.createBiquadFilter();
     filter.type = 'highpass';
     filter.frequency.value = 80;
@@ -85,21 +84,20 @@ function applyNoiseCancellation(audioStream) {
     return destination.stream;
 }
 
-// Background blur (canvas filter - placeholder)
+// Làm mờ nền (canvas filter - placeholder)
 function applyBackgroundBlur(videoElement) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = videoElement.videoWidth;
     canvas.height = videoElement.videoHeight;
 
-    // Simple blur effect
     ctx.filter = 'blur(10px)';
     ctx.drawImage(videoElement, 0, 0);
 
     return canvas;
 }
 
-// Virtual background (canvas filter - placeholder)
+// Nền ảo (canvas filter - placeholder)
 function applyVirtualBackground(videoElement, backgroundImage) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -111,7 +109,6 @@ function applyVirtualBackground(videoElement, backgroundImage) {
     bg.src = backgroundImage;
     bg.onload = () => {
         ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-        // Draw video with chroma key (simplified)
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(videoElement, 0, 0);
     };
@@ -119,7 +116,7 @@ function applyVirtualBackground(videoElement, backgroundImage) {
     return canvas;
 }
 
-// Live captions using Web Speech API
+// Live captions sử dụng Web Speech API
 let recognition = null;
 
 function startLiveCaptions(callback) {
@@ -148,13 +145,11 @@ function stopLiveCaptions() {
     }
 }
 
-// Translation placeholder
+// Dịch
 function translateText(text, targetLanguage) {
-    // Placeholder for translation API integration
     return Promise.resolve(`[Translated to ${targetLanguage}]: ${text}`);
 }
 
-// Export functions
 window.webrtcUtils = {
     getUserMedia,
     getDisplayMedia,

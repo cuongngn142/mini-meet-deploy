@@ -18,6 +18,8 @@ let activePolls = [];
 // Utility Functions
 // ============================================
 
+
+//Đếm lượt vote
 const formatVoteLabel = (option) => {
     const count = Array.isArray(option?.votes) ? option.votes.length : 0;
     return `${option?.text || ''} (${count} vote${count === 1 ? '' : 's'})`;
